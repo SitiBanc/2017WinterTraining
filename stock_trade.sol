@@ -115,7 +115,7 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
     request[] public sellRequests;  //賣單
     request[] public buyRequests;   //買單
     request[] public myRequests;    //我的掛單(user搜尋自己的掛單)
-    uint public length = sellRequests.length + buyRequests.length;  //not important
+    uint public totalLength = sellRequests.length + buyRequests.length;  //not important
     uint256 public totalSupply;
 
     mapping (address => bool) public frozenAccount;	//使用mapping儲存某address是否為frozenAccount
@@ -133,6 +133,7 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
     ) token (initialSupply, tokenName, decimalUnits, tokenSymbol) {
         if(centralMinter != 0 ) owner = centralMinter;      // Sets the owner as specified (if centralMinter is not specified the owner is msg.sender)
         balanceOf[owner] = initialSupply;                   // Give the owner all initial tokens
+		totalSupply = initialSupply;
     }
 
     /* Send coins */
@@ -151,11 +152,11 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
         if (frozenAccount[_from]) throw;                        // Check if frozen            
         if (balanceOf[_from] < _value) throw;                 // Check if the sender has enough
         if (balanceOf[_to] + _value < balanceOf[_to]) throw;  // Check for overflows
-        if (_value > allowance[_from][msg.sender]) throw;   // Check allowance
+        //if (_value > allowance[_from][msg.sender]) throw;   // Check allowance
         balanceOf[_from] -= _value;                          // Subtract from the sender
         balanceOf[_to] += _value;                            // Add the same to the recipient
-        allowance[_from][msg.sender] -= _value;
-        Transfer(_from, _to, _value);
+        //allowance[_from][msg.sender] -= _value;
+        Transfer(_from, _to, _value);						//Transfer event
         return true;
     }
 
@@ -173,12 +174,12 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
 	
 	function updateAmount(bool t, uint256 a, uint i) {
         if (t) {    //更新買單數量
-            if ( i < buyRequests.length)
+            if ( i < buyRequests.length && buyRequests[i].account == msg.sender)	//check index and user
                 buyRequests[i].amount = a;
             else
                 throw;
         }else {     //更新賣單數量
-            if ( i < sellRequests.length)
+            if ( i < sellRequests.length && sellRequests[i].account == msg.sender && balanceOf[msg.sender] >= a)	//check index, user and balance
                 sellRequests[i].amount = a;
             else
                 throw;
@@ -221,14 +222,15 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
 						transferFrom(sellRequests[i].account, msg.sender, sellRequests[i].amount);
 						//(賣單交易成立)消除賣單
 						removeRequest(false, i);
+						i --;	//修正removeRequest()shift index的影響
 						a -= sellRequests[i].amount;
 						continue;
 					}else{	//需求量<=供應量
 						//token轉移
 						transferFrom(sellRequests[i].account, msg.sender, a);
 						//搓合成功
-						a = 0;
 						sellRequests[i].amount -= a;
+						a = 0;
 						if(sellRequests[i].amount  == 0)
 							removeRequest(false, i);	//(賣單交易成立)消除賣單
 						break;
@@ -239,8 +241,10 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
 			if(a > 0)
 			addRequest(p, a, t);
 		}else {	//is seller
+			//check balance
+			if (balanceOf[msg.sender] < a) throw;
 			//允許本contract未來交易搓合時能執行transferFrom()
-			approve(this, a);
+			//approve(this.address, a);
 			for (i = 0 ; i < buyRequests.length ; i ++) {
 				//check price 買價>=賣價p
 				if (buyRequests[i].price >= p && a > 0) {
@@ -250,14 +254,15 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
 						transferFrom(msg.sender, buyRequests[i].account, buyRequests[i].amount);
 						//(買單交易成立)消除買單
 						removeRequest(true, i);
+						i --;	//修正removeRequest()shift index的影響
 						a -= buyRequests[i].amount;
 						continue;
 					}else{
 						//供應量<=需求量
 						transferFrom(msg.sender, buyRequests[i].account, a);
 						//搓合成功
-						a = 0;
 						sellRequests[i].amount -= a;
+						a = 0;
 						if(sellRequests[i].amount  == 0)
 							removeRequest(true, i);	//(賣單交易成立)消除賣單
 						break;
@@ -277,7 +282,7 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
             sellRequests.push(request({account: msg.sender, price:p, amount: a, is_buy: t, timestamp: now}));
         }
         
-        length += 1;
+        totalLength ++;
     }
 	
     function removeRequest(bool t, uint TargetIndex) {
@@ -286,15 +291,16 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
                 uint a = buyRequests[TargetIndex].amount;
                 buyRequests[TargetIndex] = buyRequests[i+1];    //TargetIndex之後(含)往前shift
                 delete buyRequests[buyRequests.length-1];       //刪除最後一筆
-                buyRequests.length--;                           //總長度-1
+                buyRequests.length --;                           //總長度-1
             }
         }else {     //賣單移除
             for (i = TargetIndex ; i < sellRequests.length-1 ; i++) {
                 sellRequests[TargetIndex] = sellRequests[i+1];      //TargetIndex之後(含)往前shift
                 delete sellRequests[sellRequests.length-1];         //刪除最後一筆
-                sellRequests.length--;                              //總長度-1
+                sellRequests.length --;                              //總長度-1
+				totalLength --;
                 //disapprove
-                disapprove(this, a);
+                //disapprove(this, a);
             }
         }
     }
