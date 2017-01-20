@@ -210,29 +210,71 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
     }
 	
     function initialTrade(uint256 p, uint a, bool t) {
-        if (t){  //is buyer
-            for (uint i = 0 ; i < sellRequests.length ; i ++) {
-                if (p >= sellRequests[i].price){    //check price
-                    //check amount
-                }
-            }
-        }else{  //is seller
-            for (i = 0 ; i < buyRequests.length ; i ++) {
-                if (p >= buyRequests[i].price){     //check price
-                    //check amount
-                }
-            }
-        }
-        
-    }
+		uint i = 0;
+		if (t){	//is buyer
+			for (i = 0 ; i < sellRequests.length ; i ++) {
+				//check price 買價p>=賣價 
+				if (p >= sellRequests[i].price && a > 0) {
+					//check amount
+					if(a > sellRequests[i].amount){	//需求量>供應量(供不應求)
+						//token轉移
+						transferFrom(sellRequests[i].account, msg.sender, sellRequests[i].amount);
+						//(賣單交易成立)消除賣單
+						removeRequest(false, i);
+						a -= sellRequests[i].amount;
+						continue;
+					}else{	//需求量<=供應量
+						//token轉移
+						transferFrom(sellRequests[i].account, msg.sender, a);
+						//搓合成功
+						a = 0;
+						sellRequests[i].amount -= a;
+						if(sellRequests[i].amount  == 0)
+							removeRequest(false, i);	//(賣單交易成立)消除賣單
+						break;
+					}
+				}
+			}
+			//需求價<供應價 或 沒有搓完 --> a > 0
+			if(a > 0)
+			addRequest(p, a, t);
+		}else {	//is seller
+			//允許本contract未來交易搓合時能執行transferFrom()
+			approve(this, a);
+			for (i = 0 ; i < buyRequests.length ; i ++) {
+				//check price 買價>=賣價p
+				if (buyRequests[i].price >= p && a > 0) {
+					//check amount
+					if(a > buyRequests[i].amount){	//供應量>需求量(供過於求)
+						//token轉移
+						transferFrom(msg.sender, buyRequests[i].account, buyRequests[i].amount);
+						//(買單交易成立)消除買單
+						removeRequest(true, i);
+						a -= buyRequests[i].amount;
+						continue;
+					}else{
+						//供應量<=需求量
+						transferFrom(msg.sender, buyRequests[i].account, a);
+						//搓合成功
+						a = 0;
+						sellRequests[i].amount -= a;
+						if(sellRequests[i].amount  == 0)
+							removeRequest(true, i);	//(賣單交易成立)消除賣單
+						break;
+					}
+				}
+			}
+			//需求價<供應價 或 沒有搓完 --> a > 0
+			if(a > 0)
+			addRequest(p, a, t);
+		}
+	}
 	
     function addRequest(uint256 p, uint256 a, bool t) {
         if (t) {    //is buyer
             buyRequests.push(request({account: msg.sender, price:p, amount: a, is_buy: t, timestamp: now}));
         }else {     //is seller
             sellRequests.push(request({account: msg.sender, price:p, amount: a, is_buy: t, timestamp: now}));
-            //允許本contract未來交易搓合時能執行transferFrom()
-            approve(this, a);
         }
         
         length += 1;
