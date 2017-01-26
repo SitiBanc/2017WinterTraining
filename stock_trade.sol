@@ -261,7 +261,7 @@ contract MyAdvancedToken is owned, token {	//進階版Token(is可能是繼承的
 						//供應量<=需求量
 						transferFrom(msg.sender, buyRequests[i].account, a);
 						//搓合成功
-						sellRequests[i].amount -= a;
+						buyRequests[i].amount -= a;
 						a = 0;
 						if(sellRequests[i].amount  == 0)
 							removeRequest(true, i);	//(賣單交易成立)消除賣單
